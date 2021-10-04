@@ -14,7 +14,7 @@ abstract contract PancakeFactory {
     function initializeFactory(address template) external virtual;
 }
 
-abstract contract UniswapExchange {
+abstract contract PancakeSwapExchange {
     // Address of ERC20 token sold on this exchange
     function tokenAddress() external view virtual returns (address token);
     // Address of Uniswap Factory
