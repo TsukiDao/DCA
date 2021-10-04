@@ -1,7 +1,6 @@
 pragma solidity >= 0.5 < 0.8;
 
 import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol'; // ERC20 Interface
-import 'https://github.com/ETH-Pantheon/Aion/blob/master/contracts/aionInterface.sol'; //Aion Interface
 import './uniswapInterfaceV1.sol';
 import "https://github.com/ETH-Pantheon/Dollar-Cost-Averaging/blob/master/contracts/SafeMath.sol";
 
@@ -37,8 +36,7 @@ contract DCA{
     // ************************************************************************************************************************************************
     function setup(address owner_, address _creator) payable public returns(bool){
         require(owner==address(0));
-        uniswapInstance = UniswapFactory(0xD3E51Ef092B2845f10401a0159B2B96e8B6c3D30);
-        aion = Aion(0x2fC197cD7897f41957F72e8E390d5a7cF2858CBF);
+        pancakeswapInstance = PancakeFactory(0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73);
         owner = payable(owner_);
         creator = payable(_creator);
         return true;
@@ -51,7 +49,7 @@ contract DCA{
         require(msg.sender == owner);
         gasAmount = gasLimit;
         maxGasPrice = gasPrice;
-        address exchangeAddress = uniswapInstance.getExchange(tokenToSell);
+        address exchangeAddress = pancakeswapInstance.getExchange(tokenToSell);
         IERC20(tokenToSell).approve(exchangeAddress, uint256(-1));
         TokenToToken(tokenToSell, tokenToBuy, interval, amountToSell);
     }
@@ -60,7 +58,7 @@ contract DCA{
         require(msg.sender == owner);
         gasAmount = gasLimit;
         maxGasPrice = gasPrice;
-        address exchangeAddress = uniswapInstance.getExchange(tokenToSell);
+        address exchangeAddress = pancakeswapInstance.getExchange(tokenToSell);
         IERC20(tokenToSell).approve(exchangeAddress, uint256(-1));
         TokenToToken(tokenToSell, tokenToBuy, interval, amountToSell,refillEther);
     }
