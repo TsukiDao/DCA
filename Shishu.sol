@@ -1,7 +1,7 @@
 pragma solidity >= 0.6 <0.8;
 
-import "https://github.com/ETH-Pantheon/Dollar-Cost-Averaging/blob/master/contracts/DCAFactory.sol";
-import "https://github.com/ETH-Pantheon/Dollar-Cost-Averaging/blob/master/contracts/DCA.sol";
+import "./DCAFactory.sol";
+import "./DCA.sol";
 contract Shishu{
     address payable admin;
     DCAFactory factory;
