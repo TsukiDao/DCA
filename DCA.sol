@@ -2,7 +2,7 @@ pragma solidity >= 0.5 < 0.8;
 
 import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol'; // ERC20 Interface
 import './uniswapInterfaceV1.sol';
-import "https://github.com/ETH-Pantheon/Dollar-Cost-Averaging/blob/master/contracts/SafeMath.sol";
+import "./SafeMath.sol";
 
 contract DCA{
     using SafeMath for uint256;
