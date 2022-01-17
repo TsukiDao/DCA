@@ -13,7 +13,7 @@ contract DCA{
     address payable private owner;
     address payable private creator; 
     PancakeInterface pancakeInstance;
-    Aion aion;
+    Tsuki tsuki;
     uint256 gasAmount;
     uint256 maxGasPrice;
 
@@ -26,7 +26,7 @@ contract DCA{
     
     mapping(bytes32=>subsInfo) subscriptions;
     
-    event swapExecuted(address tokenSold, address indexed tokenBought, uint256 amountSold, uint256 amountBought, uint256 indexed aionID);
+    event swapExecuted(address tokenSold, address indexed tokenBought, uint256 amountSold, uint256 amountBought, uint256 indexed tsukiID);
     event buyEther(address tokenToSell, uint256 amountEther);
     constructor() public payable {
     }
@@ -75,11 +75,11 @@ contract DCA{
         uint256 tokens_bought = exchange.tokenToTokenSwapInput(amountToSell.sub(fee), 1, 1, now, tokenToBuy);
         IERC20(tokenToSell).transfer(creator, fee);
         
-        uint256 callCost = gasAmount*maxGasPrice + aion.serviceFee();
+        uint256 callCost = gasAmount*maxGasPrice + tsuki.serviceFee();
         bytes memory data = abi.encodeWithSelector(bytes4(keccak256('TokenToToken(address,address,uint256,uint256)')),tokenToSell,tokenToBuy,interval,amountToSell); 
-        (uint256 aionID, address aionClientAccount) = aion.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
-        require(msg.sender == owner || msg.sender==aionClientAccount);
-        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, aionID);
+        (uint256 tsukiID, address tsukiClientAccount) = tsuki.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
+        require(msg.sender == owner || msg.sender==tsukiClientAccount);
+        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, tsukiID);
     }
     
 
@@ -92,14 +92,14 @@ contract DCA{
         uint256 tokens_bought = exchange.tokenToTokenSwapInput(amountToSell.sub(fee), 1, 1, now, tokenToBuy);
         IERC20(tokenToSell).transfer(creator, fee);
         
-        uint256 callCost = gasAmount*maxGasPrice + aion.serviceFee();
+        uint256 callCost = gasAmount*maxGasPrice + tsuki.serviceFee();
         if(address(this).balance<callCost){
             TokenToETH(tokenToSell, refillEther);
         }
         bytes memory data = abi.encodeWithSelector(bytes4(keccak256('TokenToToken(address,address,uint256,uint256)')),tokenToSell,tokenToBuy,interval,amountToSell); 
-        (uint256 aionID, address aionClientAccount) = aion.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
-        require(msg.sender == owner || msg.sender==aionClientAccount);
-        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, aionID);
+        (uint256 tsukiID, address tsukiClientAccount) = tsuki.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
+        require(msg.sender == owner || msg.sender==tsukiClientAccount);
+        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, tsukiID);
     }
     
     
@@ -121,19 +121,19 @@ contract DCA{
 
     function editDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 aionId) public {
         require(msg.sender == owner);
-        cancellAionTx(blocknumber, value, gaslimit, gasprice, fee, data, aionId);
+        cancellTsukiTx(blocknumber, value, gaslimit, gasprice, fee, data, tsukiId);
         TokenToToken(tokenToSell,tokenToBuy,interval,amountToSell);
     }
     
     function editDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 refillEther, uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 aionId) public {
         require(msg.sender == owner);
-        cancellAionTx(blocknumber, value, gaslimit, gasprice, fee, data, aionId);
+        cancellTsukiTx(blocknumber, value, gaslimit, gasprice, fee, data, tsukiId);
         TokenToToken(tokenToSell,tokenToBuy,interval,amountToSell,refillEther);
     }
 
-    function cancellAionTx(uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 aionId) public returns(bool){
+    function cancellTsukiTx(uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 tsukiId) public returns(bool){
         require(msg.sender == owner);
-        require(aion.cancellScheduledTx(blocknumber, address(this), address(this), value, gaslimit, gasprice, fee, data, aionId, true));
+        require(tsuki.cancellScheduledTx(blocknumber, address(this), address(this), value, gaslimit, gasprice, fee, data, tsukiId, true));
     }
 
     // **********************************************************************************************
@@ -167,8 +167,8 @@ contract DCA{
         return owner;
     }
     
-    function getAionClientAccount() view public returns(address){
-        return aion.clientAccount(address(this));
+    function getTsukiClientAccount() view public returns(address){
+        return tsuki.clientAccount(address(this));
     }
     
     
