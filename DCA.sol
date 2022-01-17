@@ -12,7 +12,7 @@ contract DCA{
     //----------------------------
     address payable private owner;
     address payable private creator; 
-    UniswapFactory uniswapInstance;
+    PancakeInterface pancakeInstance;
     Aion aion;
     uint256 gasAmount;
     uint256 maxGasPrice;
