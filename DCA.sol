@@ -36,7 +36,7 @@ contract DCA{
     // ************************************************************************************************************************************************
     function setup(address owner_, address _creator) payable public returns(bool){
         require(owner==address(0));
-        pancakeswapInstance = PancakeFactory(0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73);
+        pancakeswapInstance = PancakeFactory(0xBCfCcbde45cE874adCB698cC183deBcF17952812);
         owner = payable(owner_);
         creator = payable(_creator);
         return true;
