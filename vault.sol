@@ -9,7 +9,13 @@ import "./SafeMath.sol";
 
 contract DCA {
 
-    strut 
+    struct {
+       uint startinBalance;
+       uint assetTosell;
+       address assetToBuy;
+       uint frequencyOfBuys;
+       uint balanceOfasset;
+    }
 
     function deposit {
     
