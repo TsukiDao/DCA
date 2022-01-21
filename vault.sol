@@ -16,6 +16,11 @@ contract DCA {
        uint frequencyOfBuys;
        uint balanceOfasset;
     }
+    
+    function checkBalance view {
+    
+    }
+    
 
     function deposit {
     
