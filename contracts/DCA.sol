@@ -1,189 +1,162 @@
-pragma solidity >= 0.5 < 0.8;
+//SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol'; // ERC20 Interface
-import './uniswapInterfaceV1.sol';
-import "./SafeMath.sol";
+contract DCA is ERC721, AccessControl {
+  using SafeERC20 for IERC20;
 
-contract DCA{
-    using SafeMath for uint256;
-    
-    address implementation;
-    address registryAddress;
-    //----------------------------
-    address payable private owner;
-    address payable private creator; 
-    PancakeInterface pancakeInstance;
-    Tsuki tsuki;
-    uint256 gasAmount;
-    uint256 maxGasPrice;
+  bytes32 public constant SELLER_ROLE = keccak256("SELLER_ROLE");
+  struct UserPosition {
+    uint256 dayStart;
+    uint256 dailySellAmount;
+    uint256 lastDay;
+  }
 
-    struct subsInfo{
-        address tokenToSell;
-        address tokenToBuy;
-        uint256 amountToSell;
-        uint256 interval;
-    }
-    
-    mapping(bytes32=>subsInfo) subscriptions;
-    
-    event swapExecuted(address tokenSold, address indexed tokenBought, uint256 amountSold, uint256 amountBought, uint256 indexed tsukiID);
-    event buyEther(address tokenToSell, uint256 amountEther);
-    constructor() public payable {
-    }
+  IERC20 public immutable tokenToSell;
+  IERC20 public immutable tokenToBuy;
+  uint256 public length;
+  uint256 public dailyTotalSell;
+  uint256 public lastDaySold;
 
+  mapping(uint256 => uint256) public exchangePricesCumulative;
+  mapping(uint256 => uint256) public removeSellAmountByDay;
+  mapping(uint256 => UserPosition) public userPositions;
 
+  function currentDay() public view returns (uint256) {
+    return block.timestamp / 1 days;
+  }
 
-    // ************************************************************************************************************************************************
-    function setup(address owner_, address _creator) payable public returns(bool){
-        require(owner==address(0));
-        pancakeswapInstance = PancakeFactory(0xBCfCcbde45cE874adCB698cC183deBcF17952812);
-        owner = payable(owner_);
-        creator = payable(_creator);
-        return true;
-    }
+  constructor(string memory _name, string memory _symbol, address _tokenToSell, address _tokenToBuy)
+    ERC721(_name, _symbol)
+  {
+    tokenToSell = IERC20(_tokenToSell);
+    tokenToBuy = IERC20(_tokenToBuy);
+    _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    lastDaySold = currentDay();
+  }
 
+  function provide(uint256 sellDurationInDays, uint256 dailySellAmount)
+    public
+    returns (uint256)
+  {
+    tokenToSell.safeTransferFrom(
+      msg.sender,
+      address(this),
+      sellDurationInDays * dailySellAmount
+    );
+    return createPosition(sellDurationInDays, dailySellAmount);
+  }
 
+  function createPosition(uint256 sellDurationInDays, uint256 dailySellAmount)
+    internal
+    returns (uint256)
+  {
+    require(sellDurationInDays > 0, "duration!=0");
+    uint256 dayStart = currentDay();
+    require((lastDaySold + 2) > dayStart, "Halted");
+    if(lastDaySold < dayStart){
+      unchecked{dayStart -= 1;} // Already sold today
+    }
+    uint256 lastDay = dayStart + sellDurationInDays;
+    removeSellAmountByDay[lastDay] += dailySellAmount;
+    dailyTotalSell += dailySellAmount;
 
-    
-    function SubscribeDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 gasLimit, uint256 gasPrice) public payable {
-        require(msg.sender == owner);
-        gasAmount = gasLimit;
-        maxGasPrice = gasPrice;
-        address exchangeAddress = pancakeswapInstance.getExchange(tokenToSell);
-        IERC20(tokenToSell).approve(exchangeAddress, uint256(-1));
-        TokenToToken(tokenToSell, tokenToBuy, interval, amountToSell);
-    }
-    
-    function SubscribeDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 refillEther, uint256 gasLimit, uint256 gasPrice) public payable {
-        require(msg.sender == owner);
-        gasAmount = gasLimit;
-        maxGasPrice = gasPrice;
-        address exchangeAddress = pancakeswapInstance.getExchange(tokenToSell);
-        IERC20(tokenToSell).approve(exchangeAddress, uint256(-1));
-        TokenToToken(tokenToSell, tokenToBuy, interval, amountToSell,refillEther);
-    }
-    
-    
-    
-    
-    // ************************************************************************************************************************************************
-    function TokenToToken(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell) public payable{
-        IERC20(tokenToSell).transferFrom(owner, address(this), amountToSell);
-        uint256 fee = amountToSell.mul(4).div(10000);
-        address exchangeAddress = uniswapInstance.getExchange(tokenToSell);
-        UniswapExchange exchange = UniswapExchange(exchangeAddress);
-        uint256 tokens_bought = exchange.tokenToTokenSwapInput(amountToSell.sub(fee), 1, 1, now, tokenToBuy);
-        IERC20(tokenToSell).transfer(creator, fee);
-        
-        uint256 callCost = gasAmount*maxGasPrice + tsuki.serviceFee();
-        bytes memory data = abi.encodeWithSelector(bytes4(keccak256('TokenToToken(address,address,uint256,uint256)')),tokenToSell,tokenToBuy,interval,amountToSell); 
-        (uint256 tsukiID, address tsukiClientAccount) = tsuki.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
-        require(msg.sender == owner || msg.sender==tsukiClientAccount);
-        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, tsukiID);
-    }
-    
+    uint256 id = length;
+    userPositions[id] = UserPosition({
+      dayStart: dayStart,
+      dailySellAmount: dailySellAmount,
+      lastDay: lastDay
+    });
+    _mint(msg.sender, id);
+    unchecked {length += 1;}
 
-    
-    function TokenToToken(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 refillEther) public payable{
-        IERC20(tokenToSell).transferFrom(owner, address(this), amountToSell);
-        uint256 fee = amountToSell.mul(4).div(10000);
-        address exchangeAddress = uniswapInstance.getExchange(tokenToSell);
-        UniswapExchange exchange = UniswapExchange(exchangeAddress);
-        uint256 tokens_bought = exchange.tokenToTokenSwapInput(amountToSell.sub(fee), 1, 1, now, tokenToBuy);
-        IERC20(tokenToSell).transfer(creator, fee);
-        
-        uint256 callCost = gasAmount*maxGasPrice + tsuki.serviceFee();
-        if(address(this).balance<callCost){
-            TokenToETH(tokenToSell, refillEther);
-        }
-        bytes memory data = abi.encodeWithSelector(bytes4(keccak256('TokenToToken(address,address,uint256,uint256)')),tokenToSell,tokenToBuy,interval,amountToSell); 
-        (uint256 tsukiID, address tsukiClientAccount) = tsuki.ScheduleCall{value:callCost}(now + interval, address(this), 0, gasAmount, maxGasPrice, data, true);
-        require(msg.sender == owner || msg.sender==tsukiClientAccount);
-        emit swapExecuted(tokenToSell, tokenToBuy, amountToSell, tokens_bought, tsukiID);
-    }
-    
-    
-    
-    // ************************************************************************************************************************************************
-    function TokenToETH(address tokenToSell, uint256 amountEther) internal returns(uint256 amountSold){
-        IERC20 tokenContract = IERC20(tokenToSell);
-        tokenContract.transferFrom(owner, address(this), amountEther);
-        address exchangeAddress = uniswapInstance.getExchange(tokenToSell);
-        UniswapExchange exchange = UniswapExchange(exchangeAddress);
-        amountSold = exchange.tokenToEthSwapOutput(amountEther, uint256(-1), now);
-        emit buyEther(tokenToSell, amountEther);
-    }
-    
-    
-    
-    
-    // ************************************************************************************************************************************************
+    return id;
+  }
 
-    function editDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 aionId) public {
-        require(msg.sender == owner);
-        cancellTsukiTx(blocknumber, value, gaslimit, gasprice, fee, data, tsukiId);
-        TokenToToken(tokenToSell,tokenToBuy,interval,amountToSell);
-    }
-    
-    function editDCA(address tokenToSell, address tokenToBuy, uint256 interval, uint256 amountToSell, uint256 refillEther, uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 aionId) public {
-        require(msg.sender == owner);
-        cancellTsukiTx(blocknumber, value, gaslimit, gasprice, fee, data, tsukiId);
-        TokenToToken(tokenToSell,tokenToBuy,interval,amountToSell,refillEther);
-    }
+  function min(uint a, uint b) pure internal returns (uint) {
+    return a<b?a:b;
+  }
 
-    function cancellTsukiTx(uint256 blocknumber, uint256 value, uint256 gaslimit, uint256 gasprice, uint256 fee, bytes memory data, uint256 tsukiId) public returns(bool){
-        require(msg.sender == owner);
-        require(tsuki.cancellScheduledTx(blocknumber, address(this), address(this), value, gaslimit, gasprice, fee, data, tsukiId, true));
+  function computeTokensBought(uint lastDay, uint positionDayStart, uint dailySellAmount) view internal returns (uint tokensBought){
+    uint priceCumulative;
+    unchecked {
+     priceCumulative = exchangePricesCumulative[lastDay] - exchangePricesCumulative[positionDayStart]; 
     }
+    tokensBought = (priceCumulative * dailySellAmount)/1e18;
+  }
 
-    // **********************************************************************************************
-    function withdrawToken(address token) public {
-        require(msg.sender==owner);
-        IERC20 tokenContract = IERC20(token);
-        uint256 balance = tokenContract.balanceOf(address(this));
-        tokenContract.transfer(owner,balance);
-    }
-    
-    
-    function withdrawETH() public{
-        require(msg.sender==owner);
-        owner.transfer(address(this).balance);
-    }
-    
-    function withdrawAll(address[] memory tokens) public returns(bool){
-        require(msg.sender==owner);
-        withdrawETH();
-        for(uint256 i=0;i<tokens.length;i++){
-            withdrawToken(tokens[i]);
-        }
-        return true;
-    }
+  function tokensToBuyBought(uint256 id)
+    public
+    view
+    returns (uint)
+  {
+    UserPosition memory position = userPositions[id];
+    uint lastDay = min(lastDaySold, position.lastDay);
+    return computeTokensBought(lastDay, position.dayStart, position.dailySellAmount);
+  }
 
-    
-    
-    
-    // ************************************************************************************************************************************************
-    function getOwner() view public returns(address){
-        return owner;
+  function computeTokensToSellLeft(uint lastDay, uint dailySellAmount) view internal returns (uint tokensLeft){
+    uint dayDiff = 0;
+    if(lastDaySold < lastDay){
+      unchecked {
+        dayDiff = lastDay - lastDaySold;
+      }
     }
-    
-    function getTsukiClientAccount() view public returns(address){
-        return tsuki.clientAccount(address(this));
-    }
-    
-    
-    function updateGas(uint256 gasAmount_, uint256 maxGasPrice_) public {
-        require(msg.sender==owner);
-        gasAmount = gasAmount_;
-        maxGasPrice = maxGasPrice_;
-    }
+    tokensLeft = dayDiff * dailySellAmount;
+  }
 
+  function tokensToSellLeft(uint256 id)
+    public
+    view
+    returns (uint)
+  {
+    UserPosition memory position = userPositions[id];
+    return computeTokensToSellLeft(position.lastDay, position.dailySellAmount);
+  }
 
-
-    // ************************************************************************************************************************************************
-    receive() external payable {
-        
+  function exit(uint256 id)
+    public
+  {
+    require(ownerOf(id) == msg.sender, "Not authorized");
+    _burn(id);
+    UserPosition storage position = userPositions[id];
+    if(lastDaySold < position.lastDay){
+      dailyTotalSell -= position.dailySellAmount;
+      removeSellAmountByDay[position.lastDay] -= position.dailySellAmount;
     }
-    
-    
+    uint lastDay = min(lastDaySold, position.lastDay);
+    uint tokensBought = computeTokensBought(lastDay, position.dayStart, position.dailySellAmount);
+    tokenToBuy.safeTransfer(msg.sender, tokensBought);
+    tokenToSell.safeTransfer(msg.sender, computeTokensToSellLeft(position.lastDay, position.dailySellAmount));
+  }
+
+  function withdrawSold(uint256 id)
+    public
+  {
+    require(ownerOf(id) == msg.sender, "Not authorized");
+    UserPosition storage position = userPositions[id];
+    uint lastDay = min(lastDaySold, position.lastDay);
+    uint tokensBought = computeTokensBought(lastDay, position.dayStart, position.dailySellAmount);
+
+    position.dayStart = lastDay;
+    tokenToBuy.safeTransfer(msg.sender, tokensBought);
+  }
+
+  function executeSell(uint minReceivedPerToken) internal virtual returns (uint) {}
+
+  function sell(uint minReceivedPerToken) public onlyRole(SELLER_ROLE) {
+    uint today = currentDay();
+    require(lastDaySold == (today - 1));
+    uint price = executeSell(minReceivedPerToken);
+    exchangePricesCumulative[today] = exchangePricesCumulative[today - 1] + price;
+    lastDaySold = today;
+    dailyTotalSell -= removeSellAmountByDay[today];
+  }
+
+  function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
+    return ERC721.supportsInterface(interfaceId) || AccessControl.supportsInterface(interfaceId);
+  }
 }
